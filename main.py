@@ -1,10 +1,11 @@
 import os
 import asyncio
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, FileResponse
 from pyrogram import Client, filters
 from pyrogram.types import Message
 from dotenv import load_dotenv
+import uvicorn
 
 load_dotenv("config.env")
 
@@ -12,7 +13,7 @@ API_ID = int(os.getenv("API_ID", "12345"))
 API_HASH = os.getenv("API_HASH", "your_api_hash")
 BOT_TOKEN = os.getenv("BOT_TOKEN", "your_bot_token")
 LOG_CHANNEL = int(os.getenv("LOG_CHANNEL", "-100xxxxxxxxxx"))
-BASE_URL = os.getenv("BASE_URL", "http://localhost:8080")
+BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")
 
 bot = Client("bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 app = FastAPI()
@@ -37,16 +38,15 @@ async def download_file(file_id: str):
 async def handle_file(client: Client, message: Message):
     file_name = message.document.file_name if message.document else message.video.file_name
     file_id = str(message.id)
-    download_path = f"downloads/{file_id}/original.mp4"
-    os.makedirs(f"downloads/{file_id}", exist_ok=True)
+    download_folder = f"downloads/{file_id}"
+    download_path = f"{download_folder}/original.mp4"
+    os.makedirs(download_folder, exist_ok=True)
     await message.download(file_name=download_path)
 
-    os.system(f"ffmpeg -i {download_path} -filter:v scale=-2:144 -c:a copy downloads/{file_id}/144p.m3u8")
-    os.system(f"ffmpeg -i {download_path} -filter:v scale=-2:240 -c:a copy downloads/{file_id}/240p.m3u8")
-    os.system(f"ffmpeg -i {download_path} -filter:v scale=-2:360 -c:a copy downloads/{file_id}/360p.m3u8")
-    os.system(f"ffmpeg -i {download_path} -filter:v scale=-2:480 -c:a copy downloads/{file_id}/480p.m3u8")
-    os.system(f"ffmpeg -i {download_path} -filter:v scale=-2:720 -c:a copy downloads/{file_id}/720p.m3u8")
-    os.system(f"ffmpeg -i {download_path} -filter:v scale=-2:1080 -c:a copy downloads/{file_id}/1080p.m3u8")
+    # HLS multiple quality transcoding
+    qualities = [144, 240, 360, 480, 720, 1080]
+    for q in qualities:
+        os.system(f"ffmpeg -i {download_path} -vf scale=-2:{q} -c:a aac -c:v h264 -f hls -hls_time 10 -hls_playlist_type vod {download_folder}/{q}p.m3u8")
 
     stream_link = f"{BASE_URL}/player/{file_id}"
     download_link = f"{BASE_URL}/download/{file_id}"
@@ -59,10 +59,15 @@ async def handle_file(client: Client, message: Message):
         f"✅ **File Processed**\n📁 Name: {file_name}\n🆔 ID: {file_id}\n📥 [Download Link]({download_link})\n▶️ [Stream Link]({stream_link})"
     )
 
-def start():
-    bot.start()
-    loop = asyncio.get_event_loop()
-    loop.create_task(app.run())
+async def start_bot():
+    await bot.start()
+    print("Bot started")
+
+async def main():
+    await start_bot()
+    config = uvicorn.Config(app, host="0.0.0.0", port=8080)
+    server = uvicorn.Server(config)
+    await server.serve()
 
 if __name__ == "__main__":
-    start()
+    asyncio.run(main())
