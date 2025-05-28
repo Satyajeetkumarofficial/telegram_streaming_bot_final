@@ -1,6 +1,7 @@
 import os
-import asyncio
 import uvicorn
+import asyncio
+from contextlib import asynccontextmanager
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse, FileResponse
 from pyrogram import Client, filters
@@ -9,18 +10,21 @@ from dotenv import load_dotenv
 
 load_dotenv("config.env")
 
-API_ID = int(os.getenv("API_ID", "12345"))
-API_HASH = os.getenv("API_HASH", "your_api_hash")
-BOT_TOKEN = os.getenv("BOT_TOKEN", "your_bot_token")
-LOG_CHANNEL = int(os.getenv("LOG_CHANNEL", "-100xxxxxxxxxx"))
-BASE_URL = os.getenv("BASE_URL", "http://localhost:8000")
+API_ID = int(os.getenv("API_ID"))
+API_HASH = os.getenv("API_HASH")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+LOG_CHANNEL = int(os.getenv("LOG_CHANNEL"))
+BASE_URL = os.getenv("BASE_URL")
 
 bot = Client("bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
-app = FastAPI()
 
-@app.on_event("startup")
-async def on_startup():
-    asyncio.create_task(bot.start())  # start pyrogram bot
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await bot.start()
+    yield
+    await bot.stop()
+
+app = FastAPI(lifespan=lifespan)
 
 @app.get("/", response_class=HTMLResponse)
 async def home():
